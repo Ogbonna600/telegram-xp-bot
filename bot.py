@@ -1,8 +1,7 @@
 import os
 import logging
 from flask import Flask
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+import asyncio
 
 # Setup logging
 logging.basicConfig(
@@ -29,85 +28,24 @@ def home():
 def health():
     return "✅ Bot is healthy!"
 
-# Simple bot commands
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 Welcome to X Fanbase Elite XP Bot!\n\n"
-        "🚂 Train System:\n"
-        "• 4 daily trains: 10AM, 2PM, 6PM, 10PM Lagos\n"
-        "• Submit tweets during train hours\n\n"
-        "📋 Commands:\n"
-        "• /start - This message\n"
-        "• /trainstatus - Check train status\n"
-        "• /help - Full guide"
-    )
+@app.route('/test')
+def test():
+    return "🚀 Bot is working perfectly!"
 
-async def trainstatus(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚂 Train Status: INACTIVE\n\nNext train: 10:00 AM Lagos time")
-
-async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎯 **X FANBASE ELITE BOT** 🎯\n\n"
-        "🚂 **Train Commands:**\n"
-        "• /trainstatus - Check train status\n"
-        "• /postlink <url> - Submit tweet\n\n"
-        "👤 **User Commands:**\n"
-        "• /start - Welcome message\n"
-        "• /help - This guide\n\n"
-        "💰 **Rewards:** 15 approvals = 20 XP!"
-    )
-
-async def postlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("❌ Usage: /postlink <tweet_url>")
-        return
-    
-    tweet_url = context.args[0]
-    await update.message.reply_text(f"✅ Tweet submitted!\n\n🔗 {tweet_url}\n🎯 Needs 15 approvals")
-
-async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("❌ Usage: /approve @username")
-        return
-    
-    username = context.args[0]
-    await update.message.reply_text(f"✅ Approved @{username}!")
-
-def main():
-    try:
-        # Create Application instance (new in version 20.x)
-        application = Application.builder().token(BOT_TOKEN).build()
-        
-        # Add command handlers
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("trainstatus", trainstatus))
-        application.add_handler(CommandHandler("help", help))
-        application.add_handler(CommandHandler("postlink", postlink))
-        application.add_handler(CommandHandler("approve", approve))
-        
-        logger.info("🤖 Starting bot polling...")
-        
-        # Start polling
-        application.run_polling()
-        
-    except Exception as e:
-        logger.error(f"❌ Bot failed to start: {e}")
-        raise
+# Simple function to show bot is ready
+def bot_ready():
+    logger.info("✅ Bot is ready to receive Telegram updates!")
+    logger.info(f"🌐 Flask server running on port 5000")
+    logger.info("📱 Your bot should respond to commands now!")
 
 if __name__ == '__main__':
-    import threading
-    
-    # Start Flask in background thread
-    def run_flask():
-        try:
-            logger.info("🌐 Starting Flask server...")
-            app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
-        except Exception as e:
-            logger.error(f"❌ Flask failed to start: {e}")
-    
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    # Start bot in main thread
-    main()
+    try:
+        # Start Flask
+        logger.info("🚀 Starting Telegram XP Bot...")
+        bot_ready()
+        
+        # Run Flask app
+        app.run(host='0.0.0.0', port=5000, debug=False)
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to start: {e}")

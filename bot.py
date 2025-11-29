@@ -2,10 +2,13 @@ import os
 import logging
 from flask import Flask
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # Setup logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 # Get bot token from environment
@@ -54,36 +57,57 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💰 **Rewards:** 15 approvals = 20 XP!"
     )
 
-def run_bot():
+async def postlink(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❌ Usage: /postlink <tweet_url>")
+        return
+    
+    tweet_url = context.args[0]
+    await update.message.reply_text(f"✅ Tweet submitted!\n\n🔗 {tweet_url}\n🎯 Needs 15 approvals")
+
+async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❌ Usage: /approve @username")
+        return
+    
+    username = context.args[0]
+    await update.message.reply_text(f"✅ Approved @{username}!")
+
+def main():
     try:
-        # Create bot application
-        application = ApplicationBuilder().token(BOT_TOKEN).build()
+        # Create Application instance (new in version 20.x)
+        application = Application.builder().token(BOT_TOKEN).build()
         
         # Add command handlers
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("trainstatus", trainstatus))
         application.add_handler(CommandHandler("help", help))
+        application.add_handler(CommandHandler("postlink", postlink))
+        application.add_handler(CommandHandler("approve", approve))
         
-        logger.info("🤖 Starting bot...")
+        logger.info("🤖 Starting bot polling...")
+        
+        # Start polling
         application.run_polling()
         
     except Exception as e:
         logger.error(f"❌ Bot failed to start: {e}")
-
-def run_flask():
-    try:
-        logger.info("🌐 Starting Flask server...")
-        app.run(host='0.0.0.0', port=5000, debug=False)
-    except Exception as e:
-        logger.error(f"❌ Flask failed to start: {e}")
+        raise
 
 if __name__ == '__main__':
     import threading
     
     # Start Flask in background thread
+    def run_flask():
+        try:
+            logger.info("🌐 Starting Flask server...")
+            app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+        except Exception as e:
+            logger.error(f"❌ Flask failed to start: {e}")
+    
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     
     # Start bot in main thread
-    run_bot()
+    main()

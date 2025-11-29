@@ -4,7 +4,7 @@ import pytz
 import threading
 from flask import Flask
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, JobQueue, CallbackContext
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
@@ -21,12 +21,12 @@ TZ = pytz.timezone("Africa/Lagos")
 # XP & Train Settings
 XP_FOR_APPROVAL = 20
 APPROVALS_NEEDED = 15
-DAILY_TRAIN_TIMES = [(10, 0), (14, 0), (18, 0), (22, 0)]  # 10AM, 2PM, 6PM, 10PM Lagos
-TRAIN_DURATION = 1  # hours
+DAILY_TRAIN_TIMES = [(10, 0), (14, 0), (18, 0), (22, 0)]
+TRAIN_DURATION = 1
 
 # Anti-Cheat Settings
-MAX_APPROVALS_PER_USER = 5  # Max approvals one user can give per train
-SUSPICIOUS_ACTIVITY_LIMIT = 10  # Max actions per minute
+MAX_APPROVALS_PER_USER = 5
+SUSPICIOUS_ACTIVITY_LIMIT = 10
 
 # -------------------- SETUP --------------------
 logging.basicConfig(
@@ -35,17 +35,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Google Sheets setup - MODIFIED FOR RENDER
+# Google Sheets setup
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 # For Render environment
 SERVICE_ACCOUNT_JSON = os.environ.get('SERVICE_ACCOUNT_JSON')
 if SERVICE_ACCOUNT_JSON:
-    # Use environment variable (for Render)
     service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
     creds = ServiceAccountCredentials.from_json_keyfile_dict(service_account_info, scope)
 else:
-    # Fallback to file (for local testing)
     SERVICE_ACCOUNT_FILE = "telegramxpbot-6a2587fe86f0.json"
     creds = ServiceAccountCredentials.from_json_keyfile_name(SERVICE_ACCOUNT_FILE, scope)
 
@@ -71,70 +69,16 @@ user_approval_counts = {}
 
 # -------------------- TRAIN SYSTEM FUNCTIONS --------------------
 def get_current_train_session():
-    """Get current active train session"""
     now = datetime.now(TZ)
     for hour, minute in DAILY_TRAIN_TIMES:
         train_start = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         train_end = train_start + timedelta(hours=TRAIN_DURATION)
-        
         if train_start <= now < train_end:
             return train_start.strftime("%Y%m%d_%H%M")
     return None
 
-def start_new_train_session():
-    """Start a new train session"""
-    global current_train_session
-    current_train_session = datetime.now(TZ).strftime("%Y%m%d_%H%M")
-    
-    # Reset approval counts for new session
-    user_approval_counts.clear()
-    
-    logger.info(f"🚂 New train session started: {current_train_session}")
-    return current_train_session
-
 def is_train_active():
-    """Check if train is currently active"""
     return get_current_train_session() is not None
-
-# -------------------- ANTI-CHEAT SYSTEM --------------------
-def track_user_activity(user_id: int):
-    """Track user activity to detect suspicious behavior"""
-    now = datetime.now(TZ)
-    minute_key = now.strftime("%Y%m%d%H%M")
-    
-    if user_id not in user_activity_tracker:
-        user_activity_tracker[user_id] = {}
-    
-    if minute_key not in user_activity_tracker[user_id]:
-        user_activity_tracker[user_id][minute_key] = 0
-    
-    user_activity_tracker[user_id][minute_key] += 1
-    
-    # Clean old entries (keep only last 10 minutes)
-    ten_min_ago = (now - timedelta(minutes=10)).strftime("%Y%m%d%H%M")
-    for key in list(user_activity_tracker[user_id].keys()):
-        if key < ten_min_ago:
-            del user_activity_tracker[user_id][key]
-    
-    return user_activity_tracker[user_id][minute_key]
-
-def is_suspicious_activity(user_id: int):
-    """Check if user has suspicious activity patterns"""
-    activity_count = track_user_activity(user_id)
-    return activity_count > SUSPICIOUS_ACTIVITY_LIMIT
-
-def can_user_approve(user_id: int):
-    """Check if user can give more approvals this session"""
-    if user_id not in user_approval_counts:
-        user_approval_counts[user_id] = 0
-    
-    return user_approval_counts[user_id] < MAX_APPROVALS_PER_USER
-
-def record_approval(user_id: int):
-    """Record that user gave an approval"""
-    if user_id not in user_approval_counts:
-        user_approval_counts[user_id] = 0
-    user_approval_counts[user_id] += 1
 
 # -------------------- CORE FUNCTIONS --------------------
 def safe_int(val):
@@ -144,15 +88,12 @@ def safe_int(val):
         return 0
 
 def get_real_user_id(update: Update):
-    """Get the REAL user ID, not the anonymous bot ID"""
     user = update.effective_user
-    
     if user.id == 1087968824 or user.username == "GroupAnonymousBot":
         if update.message and update.message.from_user:
             return update.message.from_user.id
         else:
             return 1388128653
-    
     return user.id
 
 def get_user_display_name(update: Update):
@@ -220,8 +161,7 @@ def get_user_data(row: int):
         return None
     except:
         return None
-
-def update_user_xp(row: int, proof_xp: int = 0):
+        def update_user_xp(row: int, proof_xp: int = 0):
     try:
         user_data = get_user_data(row)
         if not user_data:
@@ -254,30 +194,60 @@ def find_user_by_username(username: str):
     except:
         return None, None
 
+# -------------------- ANTI-CHEAT SYSTEM --------------------
+def track_user_activity(user_id: int):
+    now = datetime.now(TZ)
+    minute_key = now.strftime("%Y%m%d%H%M")
+    
+    if user_id not in user_activity_tracker:
+        user_activity_tracker[user_id] = {}
+    
+    if minute_key not in user_activity_tracker[user_id]:
+        user_activity_tracker[user_id][minute_key] = 0
+    
+    user_activity_tracker[user_id][minute_key] += 1
+    
+    # Clean old entries (keep only last 10 minutes)
+    ten_min_ago = (now - timedelta(minutes=10)).strftime("%Y%m%d%H%M")
+    for key in list(user_activity_tracker[user_id].keys()):
+        if key < ten_min_ago:
+            del user_activity_tracker[user_id][key]
+    
+    return user_activity_tracker[user_id][minute_key]
+
+def is_suspicious_activity(user_id: int):
+    activity_count = track_user_activity(user_id)
+    return activity_count > SUSPICIOUS_ACTIVITY_LIMIT
+
+def can_user_approve(user_id: int):
+    if user_id not in user_approval_counts:
+        user_approval_counts[user_id] = 0
+    
+    return user_approval_counts[user_id] < MAX_APPROVALS_PER_USER
+
+def record_approval(user_id: int):
+    if user_id not in user_approval_counts:
+        user_approval_counts[user_id] = 0
+    user_approval_counts[user_id] += 1
+
 # -------------------- TRAIN COMMANDS --------------------
 async def train_status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Check current train status"""
     if is_train_active():
         current_session = get_current_train_session()
-        time_left = "45 minutes"  # Simplified
         await update.message.reply_text(
             f"🚂 TRAIN IS LIVE! 🚂\n\n"
             f"📅 Session: {current_session}\n"
-            f"⏰ Time left: {time_left}\n"
             f"🎯 Required: {APPROVALS_NEEDED} approvals\n"
             f"💰 Reward: {XP_FOR_APPROVAL} XP\n\n"
             f"Use /postlink to submit your tweet!"
         )
     else:
-        next_train = "10:00 AM"  # Simplified
         await update.message.reply_text(
             f"⏸️ No active train right now.\n\n"
-            f"🕐 Next train: {next_train} Lagos time\n"
-            f"📅 Daily trains: 10AM, 2PM, 6PM, 10PM"
+            f"📅 Daily trains: 10AM, 2PM, 6PM, 10PM Lagos time"
         )
 
 async def next_train_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show next train schedule"""
     now = datetime.now(TZ)
     next_trains = []
     
@@ -299,10 +269,8 @@ async def next_train_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text("🎉 All trains completed for today! See you tomorrow!")
-
-# -------------------- ENHANCED BOT COMMANDS --------------------
+        # -------------------- ENHANCED BOT COMMANDS --------------------
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Enhanced welcome message"""
     real_user_id = get_real_user_id(update)
     display_name = get_user_display_name(update)
     
@@ -315,27 +283,22 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🤖 Welcome {display_name} to X Fanbase Elite XP Bot!{admin_status}\n\n"
         f"{train_status} Train Status: {'ACTIVE' if is_train_active() else 'INACTIVE'}\n\n"
         "🎯 **Quick Start:**\n"
-        "1. /linktwitter <username> - Link Twitter\n"
-        "2. Wait for active train\n" 
-        "3. /postlink <url> - Submit tweet\n"
-        "4. Get approvals from others\n\n"
+        "1. Wait for active train\n" 
+        "2. /postlink <url> - Submit tweet\n"
+        "3. Get approvals from others\n\n"
         
         "📖 **Essential Commands:**\n"
         "• /help - Complete guide\n"
         "• /trainstatus - Check train\n"
         "• /nexttrain - Schedule\n"
-        "• /myxp - Your stats\n"
-        "• /leaderboard - Top 10\n\n"
+        "• /approve @user - Approve tweets\n\n"
         
         f"💰 **Rewards:** {APPROVALS_NEEDED} approvals = {XP_FOR_APPROVAL} XP!"
     )
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Premium help guide"""
-    real_user_id = get_real_user_id(update)
-    
     help_text = (
-        "🎯 **X FANBASE ELITE - PREMIUM GUIDE** 🎯\n\n"
+        "🎯 **X FANBASE ELITE - BOT GUIDE** 🎯\n\n"
         
         "🚂 **DAILY TRAIN SYSTEM:**\n"
         "• 4 trains daily: 10AM, 2PM, 6PM, 10PM (Lagos)\n"
@@ -346,36 +309,24 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         "👤 **USER COMMANDS:**\n"
         "• /start - Welcome & setup\n"
-        "• /linktwitter <username> - Link Twitter\n"
         "• /postlink <url> - Submit tweet (train hours only)\n"
         "• /approve @username - Approve tweets\n"
-        "• /myxp - Your XP & stats\n"
-        "• /leaderboard - Top 10 ranking\n"
-        "• /fixmydata - Fix profile issues\n\n"
-        
-        "👑 **ADMIN COMMANDS:**\n"
-        "• /checkusers - User management\n"
-        "• /resetlinks - Clear all submissions\n"
-        "• /addxp @user amount - Add XP\n"
-        "• /stats - System analytics\n"
-        "• /cheatdetect - Suspicious activity\n\n"
+        "• /trainstatus - Check train status\n\n"
         
         "🛡️ **ANTI-CHEAT SYSTEM:**\n"
         "• Max 5 approvals per user per train\n"
         "• Activity rate limiting\n"
-        "• Duplicate submission detection\n"
-        "• Suspicious pattern monitoring\n\n"
+        "• Duplicate submission detection\n\n"
         
         f"💰 **REWARDS:** {APPROVALS_NEEDED} approvals = {XP_FOR_APPROVAL} Proof XP!"
     )
     
     if is_admin(real_user_id):
-        help_text += f"\n\n👑 **ADMIN ACCESS GRANTED** (ID: {real_user_id})"
+        help_text += f"\n\n👑 **ADMIN ACCESS GRANTED**"
     
     await update.message.reply_text(help_text)
 
 async def postlink_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Enhanced postlink with train checking"""
     if not context.args:
         await update.message.reply_text("❌ Usage: /postlink <tweet_url>\nExample: /postlink https://x.com/user/status/123456")
         return
@@ -408,12 +359,6 @@ async def postlink_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     row = find_or_create_user(str(real_user_id), display_name)
     
-    # Check if Twitter is linked
-    twitter_account = ws.cell(row, 3).value
-    if not twitter_account:
-        await update.message.reply_text("❌ Please link your Twitter first: /linktwitter <username>")
-        return
-    
     # Update tweet link with train session
     current_train = get_current_train_session()
     ws.update_cell(row, 8, tweet_url)  # Tweet Link
@@ -429,9 +374,7 @@ async def postlink_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 Reward: {XP_FOR_APPROVAL} XP\n\n"
         f"Share your submission for approvals!"
     )
-
-async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Enhanced approve with anti-cheat"""
+    async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("❌ Usage: /approve @username\nExample: /approve @Charlie")
         return
@@ -510,7 +453,6 @@ async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # -------------------- ADMIN COMMANDS --------------------
 async def cheatdetect_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Detect suspicious activity"""
     real_user_id = get_real_user_id(update)
     
     if not is_admin(real_user_id):
@@ -528,18 +470,12 @@ async def cheatdetect_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if suspicious_users:
             response = "🚨 **SUSPICIOUS ACTIVITY REPORT** 🚨\n\n"
-            for user in suspicious_users[:10]:  # Show top 10
+            for user in suspicious_users[:10]:
                 response += f"👤 {user.get('Username')} - {user.get('Warnings')} warnings\n"
             
             response += f"\n📊 Total flagged: {len(suspicious_users)} users"
         else:
             response = "✅ **No suspicious activity detected!**\n\nAll users are following the rules."
-        
-        # Add current activity stats
-        active_users = len(user_activity_tracker)
-        total_approvals = sum(user_approval_counts.values())
-        
-        response += f"\n\n📈 **Live Stats:**\nActive users: {active_users}\nTotal approvals: {total_approvals}"
         
         await update.message.reply_text(response)
         
@@ -550,4 +486,37 @@ async def cheatdetect_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 app = Flask(__name__)
 
 @app.route('/')
-def h
+def home():
+    return "🤖 Telegram XP Bot is running!"
+
+@app.route('/health')
+def health():
+    return "✅ Bot is healthy!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=5000)
+
+def run_bot():
+    # Create bot application
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    
+    # Add handlers
+    application.add_handler(CommandHandler("start", start_cmd))
+    application.add_handler(CommandHandler("help", help_cmd))
+    application.add_handler(CommandHandler("trainstatus", train_status_cmd))
+    application.add_handler(CommandHandler("nexttrain", next_train_cmd))
+    application.add_handler(CommandHandler("postlink", postlink_cmd))
+    application.add_handler(CommandHandler("approve", approve_cmd))
+    application.add_handler(CommandHandler("cheatdetect", cheatdetect_cmd))
+    
+    # Start the bot
+    application.run_polling()
+
+if __name__ == '__main__':
+    # Start Flask in a separate thread
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # Start the bot in main thread
+    run_bot()

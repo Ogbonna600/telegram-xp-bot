@@ -550,37 +550,3 @@ async def cheatdetect_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 app = Flask(__name__)
 
 @app.route('/')
-def home():
-    return "🤖 Telegram XP Bot is running!"
-
-@app.route('/health')
-def health():
-    return "✅ Bot is healthy!"
-
-def run_flask():
-    app.run(host='0.0.0.0', port=5000)
-
-def run_bot():
-    # Create bot application
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-    
-    # Add handlers
-    application.add_handler(CommandHandler("start", start_cmd))
-    application.add_handler(CommandHandler("help", help_cmd))
-    application.add_handler(CommandHandler("trainstatus", train_status_cmd))
-    application.add_handler(CommandHandler("nexttrain", next_train_cmd))
-    application.add_handler(CommandHandler("postlink", postlink_cmd))
-    application.add_handler(CommandHandler("approve", approve_cmd))
-    application.add_handler(CommandHandler("cheatdetect", cheatdetect_cmd))
-    
-    # Start the bot
-    application.run_polling()
-
-if __name__ == '__main__':
-    # Start Flask in a separate thread
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    
-    # Start the bot in main thread
-    run_bot()

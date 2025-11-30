@@ -58,7 +58,6 @@ current_train_session = None
 user_activity_tracker = {}
 user_approval_counts = {}
 
-# -------------------- TRAIN SYSTEM FUNCTIONS --------------------
 def get_current_train_session():
     now = datetime.now(TZ)
     for hour, minute in DAILY_TRAIN_TIMES:
@@ -71,7 +70,6 @@ def get_current_train_session():
 def is_train_active():
     return get_current_train_session() is not None
 
-# -------------------- ANTI-CHEAT SYSTEM --------------------
 def track_user_activity(user_id: int):
     now = datetime.now(TZ)
     minute_key = now.strftime("%Y%m%d%H%M")
@@ -100,7 +98,6 @@ def record_approval(user_id: int):
         user_approval_counts[user_id] = 0
     user_approval_counts[user_id] += 1
 
-# -------------------- CORE FUNCTIONS --------------------
 def safe_int(val):
     try:
         return int(float(val or 0))
@@ -210,7 +207,6 @@ def find_user_by_username(username: str):
     except:
         return None, None
 
-# -------------------- TRAIN COMMANDS --------------------
 async def train_status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_train_active():
         current_session = get_current_train_session()
@@ -231,7 +227,6 @@ async def next_train_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("🎉 **All trains completed for today!** See you tomorrow!")
 
-# -------------------- ENHANCED BOT COMMANDS --------------------
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     real_user_id = get_real_user_id(update)
     display_name = get_user_display_name(update)
@@ -317,7 +312,6 @@ async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(f"✅ **Approval recorded!**\n\n👤 **User:** @{target_username}\n📊 **Progress:** {approval_count}/{APPROVALS_NEEDED} approvals\n🎯 **Approved by:** {display_name}\n📝 **Your approvals this train:** {user_approval_counts.get(real_user_id, 0)}/{MAX_APPROVALS_PER_USER}")
 
-# -------------------- ADMIN COMMANDS --------------------
 async def cheatdetect_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     real_user_id = get_real_user_id(update)
     if not is_admin(real_user_id):
@@ -347,7 +341,6 @@ async def cheatdetect_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ **Error:** {e}")
 
-# -------------------- FLASK APP & BOT SETUP --------------------
 app = Flask(__name__)
 
 @app.route('/')

@@ -10,6 +10,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import os
 import json
 
+# -------------------- CONFIG --------------------
 BOT_TOKEN = os.environ.get('BOT_TOKEN', "8551726061:AAGawAjRX4wBjM8w6dHXfrJxVlUrWJU5EK4")
 SHEET_NAME = "TelegramXPBot"
 WORKSHEET_NAME = "XP"
@@ -22,6 +23,7 @@ TRAIN_DURATION = 1
 MAX_APPROVALS_PER_USER = 5
 SUSPICIOUS_ACTIVITY_LIMIT = 10
 
+# -------------------- SETUP --------------------
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,7 @@ current_train_session = None
 user_activity_tracker = {}
 user_approval_counts = {}
 
+# -------------------- TRAIN SYSTEM FUNCTIONS --------------------
 def get_current_train_session():
     now = datetime.now(TZ)
     for hour, minute in DAILY_TRAIN_TIMES:
@@ -68,6 +71,7 @@ def get_current_train_session():
 def is_train_active():
     return get_current_train_session() is not None
 
+# -------------------- ANTI-CHEAT SYSTEM --------------------
 def track_user_activity(user_id: int):
     now = datetime.now(TZ)
     minute_key = now.strftime("%Y%m%d%H%M")
@@ -96,6 +100,7 @@ def record_approval(user_id: int):
         user_approval_counts[user_id] = 0
     user_approval_counts[user_id] += 1
 
+# -------------------- CORE FUNCTIONS --------------------
 def safe_int(val):
     try:
         return int(float(val or 0))
@@ -205,6 +210,7 @@ def find_user_by_username(username: str):
     except:
         return None, None
 
+# -------------------- TRAIN COMMANDS --------------------
 async def train_status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if is_train_active():
         current_session = get_current_train_session()
@@ -225,6 +231,7 @@ async def next_train_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("🎉 **All trains completed for today!** See you tomorrow!")
 
+# -------------------- ENHANCED BOT COMMANDS --------------------
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     real_user_id = get_real_user_id(update)
     display_name = get_user_display_name(update)
@@ -265,103 +272,82 @@ async def postlink_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ws.update_cell(row, 11, current_train)
         ws.update_cell(row, 10, "")
     await update.message.reply_text(f"✅ **Tweet submitted to train!** 🚂\n\n👤 **Submitter:** {display_name}\n🔗 **Tweet:** {tweet_url}\n🎯 **Needed:** {APPROVALS_NEEDED} approvals\n💰 **Reward:** {XP_FOR_APPROVAL} XP\n\nShare your submission for approvals!")
-    async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def approve_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("❌ **Usage:** /approve @username\n**Example:** /approve @Charlie")
         return
-    
     real_user_id = get_real_user_id(update)
     display_name = get_user_display_name(update)
     target_username = context.args[0].lstrip("@")
-    
     if not can_user_approve(real_user_id):
         await update.message.reply_text(f"🚫 **Approval limit reached!**\n\nYou can only give {MAX_APPROVALS_PER_USER} approvals per train.\nWait for the next train session.")
         return
-    
     if is_suspicious_activity(real_user_id):
         await update.message.reply_text("🚫 **Suspicious activity detected.** Please wait before approving again.")
         return
-    
     if not ws:
         await update.message.reply_text("❌ **Google Sheets not available.** Approvals temporarily disabled.")
         return
-    
     target_row, target_data = find_user_by_username(target_username)
-    
     if not target_row or not target_data:
         await update.message.reply_text(f"❌ **User @{target_username} not found**")
         return
-    
     tweet_link = target_data.get('Tweet Link', '')
     user_train_id = target_data.get('Train ID', '')
     current_train = get_current_train_session()
-    
     if not validate_tweet_url(tweet_link):
         await update.message.reply_text(f"❌ **@{target_username} has no active tweet submission**")
         return
-    
     if user_train_id != current_train:
         await update.message.reply_text(f"❌ **This submission is not for the current train**")
         return
-    
     approvers = target_data.get('Approvers', '').split(',')
     if str(real_user_id) in approvers:
         await update.message.reply_text("❌ **You already approved this tweet**")
         return
-    
     record_approval(real_user_id)
     track_user_activity(real_user_id)
-    
     approvers.append(str(real_user_id))
     ws.update_cell(target_row, 10, ','.join([a for a in approvers if a]))
-    
     approval_count = len(approvers)
-    
     if approval_count >= APPROVALS_NEEDED:
         update_user_xp(target_row, XP_FOR_APPROVAL)
         await update.message.reply_text(f"🎉 **APPROVAL GOAL REACHED!** 🎉\n\n👤 **User:** @{target_username}\n✅ **Approvals:** {approval_count} achieved!\n💰 **Reward:** +{XP_FOR_APPROVAL} XP awarded!\n🎯 **Approved by:** {display_name}")
     else:
         await update.message.reply_text(f"✅ **Approval recorded!**\n\n👤 **User:** @{target_username}\n📊 **Progress:** {approval_count}/{APPROVALS_NEEDED} approvals\n🎯 **Approved by:** {display_name}\n📝 **Your approvals this train:** {user_approval_counts.get(real_user_id, 0)}/{MAX_APPROVALS_PER_USER}")
 
+# -------------------- ADMIN COMMANDS --------------------
 async def cheatdetect_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     real_user_id = get_real_user_id(update)
-    
     if not is_admin(real_user_id):
         await update.message.reply_text("❌ **Admin only command**")
         return
-    
     try:
         if not ws:
             await update.message.reply_text("❌ **Google Sheets not available**")
             return
-            
         suspicious_users = []
         all_users = ws.get_all_records()
-        
         for user in all_users:
             warnings = safe_int(user.get('Warnings', 0))
             if warnings > 0:
                 suspicious_users.append(user)
-        
         if suspicious_users:
             response = "🚨 **SUSPICIOUS ACTIVITY REPORT** 🚨\n\n"
             for user in suspicious_users[:10]:
                 response += f"👤 {user.get('Username')} - {user.get('Warnings')} warnings\n"
-            
             response += f"\n📊 **Total flagged:** {len(suspicious_users)} users"
         else:
             response = "✅ **No suspicious activity detected!**\n\nAll users are following the rules."
-        
         active_users = len(user_activity_tracker)
         total_approvals = sum(user_approval_counts.values())
-        
         response += f"\n\n📈 **Live Stats:**\n**Active users:** {active_users}\n**Total approvals:** {total_approvals}"
-        
         await update.message.reply_text(response)
-        
     except Exception as e:
         await update.message.reply_text(f"❌ **Error:** {e}")
 
+# -------------------- FLASK APP & BOT SETUP --------------------
 app = Flask(__name__)
 
 @app.route('/')

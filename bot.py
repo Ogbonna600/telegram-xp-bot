@@ -318,8 +318,8 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle errors in the bot"""
     logger.error(f"Exception while handling an update: {context.error}")
 
-async def main():
-    """Main function to run the bot"""
+def main():
+    """Main function to run the bot - FIXED VERSION"""
     application = Application.builder().token(BOT_TOKEN).build()
     
     # Add handlers
@@ -332,10 +332,9 @@ async def main():
     application.add_error_handler(error_handler)
     
     logger.info("🤖 Bot starting...")
-    await application.run_polling(
-        drop_pending_updates=True,
-        allowed_updates=Update.ALL_TYPES
-    )
+    
+    # Use run_polling instead of asyncio.run to avoid event loop issues
+    application.run_polling()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()

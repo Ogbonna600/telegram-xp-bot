@@ -7,7 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Disable health checks
-HEALTHCHECK NONE
+# Install curl for health check
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-CMD ["python", "bot.py"]
+# Start both health server and bot
+CMD sh -c "python health.py & python bot.py"

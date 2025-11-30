@@ -1,15 +1,10 @@
 import os
 import logging
 import sqlite3
-import threading
 import asyncio
 from datetime import datetime, timedelta
-from flask import Flask, request
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler, 
-    ContextTypes, MessageHandler, filters
-)
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # Configure logging
 logging.basicConfig(
@@ -18,28 +13,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Bot configuration
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN environment variable is required!")
-
-# Flask app for keeping the bot alive on Render
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "🤖 Telegram XP Bot is running!"
-
-@app.route('/health')
-def health():
-    return "✅ Bot is healthy!"
+    logger.error("❌ BOT_TOKEN not set!")
+    exit(1)
 
 # Database setup
 def init_db():
     conn = sqlite3.connect('xp_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # Users table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -54,21 +37,18 @@ def init_db():
         )
     ''')
     
-    # Daily bonus table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS daily_bonus (
             user_id INTEGER PRIMARY KEY,
             last_claimed TIMESTAMP,
-            streak_count INTEGER DEFAULT 0,
-            FOREIGN KEY (user_id) REFERENCES users (user_id)
+            streak_count INTEGER DEFAULT 0
         )
     ''')
     
     conn.commit()
     conn.close()
-    logger.info("✅ Database initialized successfully!")
+    logger.info("✅ Database initialized!")
 
-# Initialize database
 init_db()
 
 # XP system configuration
@@ -76,93 +56,62 @@ XP_PER_LEVEL = 100
 LEVEL_MULTIPLIER = 1.5
 
 def get_user(user_id):
-    """Get user from database"""
     conn = sqlite3.connect('xp_bot.db', check_same_thread=False)
     cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT * FROM users WHERE user_id = ?
-    ''', (user_id,))
-    
+    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
     user = cursor.fetchone()
     conn.close()
     
     if user:
         return {
-            'user_id': user[0],
-            'username': user[1],
-            'first_name': user[2],
-            'last_name': user[3],
-            'xp': user[4],
-            'level': user[5],
-            'last_message_time': user[6],
-            'daily_bonus_claimed': user[7],
+            'user_id': user[0], 'username': user[1], 'first_name': user[2],
+            'last_name': user[3], 'xp': user[4], 'level': user[5],
+            'last_message_time': user[6], 'daily_bonus_claimed': user[7],
             'created_at': user[8]
         }
     return None
 
 def create_user(user_id, username, first_name, last_name):
-    """Create new user in database"""
     conn = sqlite3.connect('xp_bot.db', check_same_thread=False)
     cursor = conn.cursor()
-    
     cursor.execute('''
         INSERT OR IGNORE INTO users 
         (user_id, username, first_name, last_name, xp, level, last_message_time) 
         VALUES (?, ?, ?, ?, 0, 1, ?)
     ''', (user_id, username, first_name, last_name, datetime.now()))
-    
     conn.commit()
     conn.close()
 
 def update_user_xp(user_id, xp_to_add):
-    """Update user's XP and level"""
     user = get_user(user_id)
-    if not user:
-        return None
+    if not user: return None
     
     new_xp = user['xp'] + xp_to_add
     new_level = calculate_level(new_xp)
     
     conn = sqlite3.connect('xp_bot.db', check_same_thread=False)
     cursor = conn.cursor()
-    
-    cursor.execute('''
-        UPDATE users 
-        SET xp = ?, level = ?, last_message_time = ? 
-        WHERE user_id = ?
-    ''', (new_xp, new_level, datetime.now(), user_id))
-    
+    cursor.execute('UPDATE users SET xp = ?, level = ?, last_message_time = ? WHERE user_id = ?',
+                  (new_xp, new_level, datetime.now(), user_id))
     conn.commit()
     conn.close()
     
-    return {
-        'old_level': user['level'],
-        'new_level': new_level,
-        'old_xp': user['xp'],
-        'new_xp': new_xp,
-        'xp_to_add': xp_to_add
-    }
+    return {'old_level': user['level'], 'new_level': new_level, 'old_xp': user['xp'], 'new_xp': new_xp}
 
 def calculate_level(xp):
-    """Calculate level based on XP"""
     level = 1
     required_xp = XP_PER_LEVEL
-    
     while xp >= required_xp:
         level += 1
         xp -= required_xp
         required_xp = int(required_xp * LEVEL_MULTIPLIER)
-    
     return level
 
 def xp_for_next_level(current_level, current_xp):
-    """Calculate XP needed for next level"""
     xp_needed = XP_PER_LEVEL
     for i in range(1, current_level):
         xp_needed = int(xp_needed * LEVEL_MULTIPLIER)
     
-    # Calculate how much XP user has in current level
     xp_in_current_level = current_xp
     temp_xp_needed = XP_PER_LEVEL
     for i in range(1, current_level):
@@ -172,33 +121,21 @@ def xp_for_next_level(current_level, current_xp):
     return xp_needed - xp_in_current_level
 
 def get_leaderboard(limit=10):
-    """Get top users by XP"""
     conn = sqlite3.connect('xp_bot.db', check_same_thread=False)
     cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT user_id, username, first_name, xp, level 
-        FROM users 
-        ORDER BY xp DESC 
-        LIMIT ?
-    ''', (limit,))
-    
+    cursor.execute('SELECT user_id, username, first_name, xp, level FROM users ORDER BY xp DESC LIMIT ?', (limit,))
     leaderboard = cursor.fetchall()
     conn.close()
-    
     return leaderboard
 
 def claim_daily_bonus(user_id):
-    """Claim daily bonus for user"""
     user = get_user(user_id)
-    if not user:
-        return None
+    if not user: return None
     
     now = datetime.now()
     conn = sqlite3.connect('xp_bot.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # Check daily bonus record
     cursor.execute('SELECT * FROM daily_bonus WHERE user_id = ?', (user_id,))
     bonus_record = cursor.fetchone()
     
@@ -206,49 +143,30 @@ def claim_daily_bonus(user_id):
         last_claimed = datetime.fromisoformat(bonus_record[1])
         streak_count = bonus_record[2]
         
-        # Check if already claimed today
         if last_claimed.date() == now.date():
             conn.close()
             return {'success': False, 'reason': 'already_claimed'}
-        
-        # Check if streak continues (claimed yesterday)
         elif last_claimed.date() == (now.date() - timedelta(days=1)):
             streak_count += 1
         else:
-            streak_count = 1  # Reset streak
+            streak_count = 1
     else:
         streak_count = 1
-        # Create new bonus record
-        cursor.execute('''
-            INSERT INTO daily_bonus (user_id, last_claimed, streak_count)
-            VALUES (?, ?, ?)
-        ''', (user_id, now, streak_count))
+        cursor.execute('INSERT INTO daily_bonus (user_id, last_claimed, streak_count) VALUES (?, ?, ?)',
+                      (user_id, now, streak_count))
     
-    # Calculate bonus XP (base 50 + 10 per streak)
     bonus_xp = 50 + (streak_count * 10)
+    cursor.execute('INSERT OR REPLACE INTO daily_bonus (user_id, last_claimed, streak_count) VALUES (?, ?, ?)',
+                  (user_id, now, streak_count))
     
-    # Update bonus record
-    cursor.execute('''
-        INSERT OR REPLACE INTO daily_bonus (user_id, last_claimed, streak_count)
-        VALUES (?, ?, ?)
-    ''', (user_id, now, streak_count))
-    
-    # Update user XP
     update_result = update_user_xp(user_id, bonus_xp)
-    
     conn.commit()
     conn.close()
     
-    return {
-        'success': True,
-        'bonus_xp': bonus_xp,
-        'streak_count': streak_count,
-        'level_update': update_result
-    }
+    return {'success': True, 'bonus_xp': bonus_xp, 'streak_count': streak_count, 'level_update': update_result}
 
-# Telegram bot handlers
+# Bot handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command"""
     user = update.effective_user
     create_user(user.id, user.username, user.first_name, user.last_name)
     
@@ -270,7 +188,6 @@ Earn XP by sending messages in the chat! 🚀
     await update.message.reply_text(welcome_text)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /help command"""
     help_text = """
 🤖 **XP Bot Help** 📚
 
@@ -293,7 +210,6 @@ Happy leveling! 🎉
     await update.message.reply_text(help_text)
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /profile command"""
     user = update.effective_user
     user_data = get_user(user.id)
     
@@ -310,14 +226,12 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ⭐ XP: {user_data['xp']}
 🎯 XP to next level: {xp_needed}
 
-📈 Total Messages: Calculating...
 🕒 Member since: {user_data['created_at'][:10]}
     """
     
     await update.message.reply_text(profile_text)
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /leaderboard command"""
     top_users = get_leaderboard(10)
     
     if not top_users:
@@ -334,7 +248,6 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(leaderboard_text)
 
 async def daily_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /daily command"""
     user = update.effective_user
     user_data = get_user(user.id)
     
@@ -405,10 +318,8 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle errors in the bot"""
     logger.error(f"Exception while handling an update: {context.error}")
 
-# Bot setup
-def setup_bot():
-    """Set up the Telegram bot"""
-    # Create Application
+async def main():
+    """Main function to run the bot"""
     application = Application.builder().token(BOT_TOKEN).build()
     
     # Add handlers
@@ -420,49 +331,11 @@ def setup_bot():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_error_handler(error_handler)
     
-    logger.info("✅ Telegram bot setup completed!")
-    return application
-
-# Create bot application
-application = setup_bot()
-
-# Bot running functions
-async def run_bot_polling():
-    """Run the bot polling with proper async context"""
-    try:
-        logger.info("🤖 Starting bot polling...")
-        await application.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
-        )
-    except Exception as e:
-        logger.error(f"❌ Bot polling error: {e}")
-        raise
-
-def start_bot():
-    """Start the Telegram bot in a separate thread"""
-    try:
-        logger.info("🚀 Starting bot in separate thread...")
-        asyncio.run(run_bot_polling())
-    except Exception as e:
-        logger.error(f"❌ Error starting bot: {e}")
-
-def start_flask():
-    """Start Flask app"""
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
-
-def main():
-    """Main function to start both Flask and Bot"""
-    logger.info("🤖 Bot should be responding to commands now!")
-    
-    # Start Flask in a separate thread
-    flask_thread = threading.Thread(target=start_flask, daemon=True)
-    flask_thread.start()
-    logger.info("🌐 Flask server started!")
-    
-    # Start bot in main thread (with proper event loop)
-    start_bot()
+    logger.info("🤖 Bot starting...")
+    await application.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES
+    )
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())

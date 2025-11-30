@@ -2,7 +2,9 @@ import os
 import logging
 import sqlite3
 import asyncio
+import threading
 from datetime import datetime, timedelta
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -17,6 +19,21 @@ BOT_TOKEN = os.environ.get('BOT_TOKEN')
 if not BOT_TOKEN:
     logger.error("❌ BOT_TOKEN not set!")
     exit(1)
+
+# Health check server
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'OK')
+    
+    def log_message(self, format, *args):
+        pass
+
+def run_health_server():
+    server = HTTPServer(('0.0.0.0', 8000), HealthHandler)
+    logger.info("🩺 Health server running on port 8000")
+    server.serve_forever()
 
 # Database setup
 def init_db():
@@ -319,7 +336,7 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Exception while handling an update: {context.error}")
 
 def main():
-    """Main function to run the bot - FIXED VERSION"""
+    """Main function to run the bot"""
     application = Application.builder().token(BOT_TOKEN).build()
     
     # Add handlers
@@ -337,4 +354,10 @@ def main():
     application.run_polling()
 
 if __name__ == '__main__':
+    # Start health server in background thread
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+    logger.info("🩺 Health server started in background")
+    
+    # Start bot
     main()

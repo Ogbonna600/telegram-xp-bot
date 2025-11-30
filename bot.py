@@ -20,19 +20,32 @@ if not BOT_TOKEN:
     logger.error("❌ BOT_TOKEN not set!")
     exit(1)
 
-# Health check server
+# Health check server with multiple endpoints
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b'OK')
+        if self.path == '/health':
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'OK')
+        elif self.path == '/ping':
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'PONG')
+        elif self.path == '/':
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'Telegram XP Bot is running!')
+        else:
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b'Not Found')
     
     def log_message(self, format, *args):
         pass
 
 def run_health_server():
     server = HTTPServer(('0.0.0.0', 8000), HealthHandler)
-    logger.info("🩺 Health server running on port 8000")
+    logger.info("🩺 Health server running on port 8000 with ping endpoint")
     server.serve_forever()
 
 # Database setup

@@ -351,7 +351,7 @@ def main():
     logger.info("🤖 Bot starting...")
     
     # Use run_polling instead of asyncio.run to avoid event loop issues
-    application.run_polling()
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
     # Start health server in background thread
